@@ -1,5 +1,5 @@
-git clone https://github.com/harness/harness-core
-git clone https://github.com/harness/harness-core-ui
+#git clone https://github.com/harness/harness-core
+#git clone https://github.com/harness/harness-core-ui
 git clone https://github.com/harness/developer-hub
 git clone https://github.com/harness/lite-engine
 git clone https://github.com/harness/css-types-loader
