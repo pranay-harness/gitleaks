@@ -6,7 +6,7 @@
   "StartColumn": 15,
   "EndColumn": 54,
   "Match": "SECRET=bea26a2221fd8090ea38720fc445eca6 ",
-  "Secret": "bea26a2221fd8090ea38720fc445eca6",
+  "Secret": "bcea26a2221fd8090ea38720fc445eca6",
   "File": "/harness/git-repos/developer-hub/docs/continuous-integration/use-ci/set-up-build-infrastructure/define-a-mac-os-build-infrastructure.md",
   "SymlinkFile": "",
   "Commit": "",
