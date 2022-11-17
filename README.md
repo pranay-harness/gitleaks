@@ -10,6 +10,7 @@ Steps to run this script:
 2. To run a gitleaks scan on all the Harness Public repos ren the below script:
 
 `cd gitleaks`
+
 `sudo bash start_script.sh`
 
 
