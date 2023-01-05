@@ -1,0 +1,164 @@
+pipeline:
+  projectIdentifier: Security_Test_Scans
+  orgIdentifier: default
+  tags: {}
+  stages:
+    - stage:
+        name: scan image
+        identifier: pull_image
+        type: CI
+        spec:
+          cloneCodebase: true
+          infrastructure:
+            type: KubernetesDirect
+            spec:
+              connectorRef: account.harnessciplatformng
+              namespace: harness-delegate-prod
+              automountServiceAccountToken: true
+              nodeSelector: {}
+              containerSecurityContext:
+                privileged: true
+                allowPrivilegeEscalation: true
+                runAsNonRoot: false
+              os: Linux
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: gitleaks
+                  identifier: pull_image
+                  spec:
+                    connectorRef: dockerhub_harnessdev
+                    image: harness/security-scans:gitleaks1
+                    shell: Bash
+                    command: |-
+                      #! /bin/bash
+                      ls
+                      mkdir clone_repos
+                      cd clone_repos
+                      pwd
+                      bash /harness/git-repos/repolist.sh
+                      echo ${GCS_KEY} | base64 -d > key.json
+                      gcloud auth activate-service-account --key-file key.json
+                      cd ..
+                      DATE=$(date +%Y-%m-%d)
+                      gitleaks detect -s /harness/clone_repos -r $DATE.json --no-git --exit-code 0
+                      gsutil cp $DATE.json gs://harness-trivy-scans
+                      #gitleaks detect -s /harness/git-repos --baseline-path baseline.json -r results.json --no-git
+                    privileged: false
+                    resources:
+                      limits:
+                        memory: 11Gi
+                        cpu: "5"
+                  failureStrategies: []
+                  when:
+                    stageStatus: All
+              - step:
+                  type: Run
+                  name: Baseline Diff
+                  identifier: Baseline_Diff
+                  spec:
+                    connectorRef: dockerhub_harnessdev
+                    image: harness/security-scans:gitleaks1
+                    shell: Sh
+                    command: |-
+                      DATE=$(date +%Y-%m-%d)
+                      gitleaks detect -s /harness/clone_repos --baseline-path baseline.json -r results_$DATE.csv -f csv -v --no-git --exit-code 0
+                      if [ -s results_$DATE.csv ];
+                      then
+                      curl -X POST --data-urlencode "payload={\"channel\": \"gitleaks-alert\", \"username\": \"Gitleaks-Alert\",\"type\": \"mrkdwn\", \"text\":\" New Hardcoded Secrets added to the repo ----> \n Checkout the new identified secrets here - https://storage.cloud.google.com/harness-trivy-scans/results_$DATE.csv \n  \", \"icon_emoji\": \":harnesshd:\"}" $slack_hook
+                      else
+                      exit 0
+                      fi
+                    resources:
+                      limits:
+                        memory: 2Gi
+                        cpu: "3"
+                  when:
+                    stageStatus: All
+                  failureStrategies: []
+              - step:
+                  type: Run
+                  name: upload new baseline to git
+                  identifier: upload_new_baseline_to_git
+                  spec:
+                    connectorRef: dockerhub_harnessdev
+                    image: harness/security-scans:gitleaks1
+                    shell: Sh
+                    command: |-
+                      rm -rf clone_repos
+                      rm baseline.json
+                      echo ${GIT_RSA} | base64 -d > id_rsa
+                      mkdir /root/.ssh
+                      mv id_rsa /root/.ssh
+                      DATE=$(date +%Y-%m-%d)
+                      cp $DATE.json baseline.json
+                      rm $DATE.json
+                      #git remote set-url origin git@github.com:pranay-harness/gitleaks.git
+                      git config --global user.email "pranay.shah@harness.io"
+                      git config --global user.username "pranay-harness"
+                      git config --global user.name "pranay-harness"
+                      git config --global user.password "$git_key"
+                      git remote remove origin
+                      git remote add origin https://pranay-harness:$git_key@github.com/pranay-harness/gitleaks.git
+                      git config --get remote.origin.url
+                      git init
+                      git add .
+                      git commit -m "adding baseline on $DATE"
+                      git branch -M main
+                      git push -u origin main
+                    envVariables:
+                      git_key: <+secrets.getValue("git_key")>
+                    resources:
+                      limits:
+                        memory: 2Gi
+                        cpu: "2"
+                  when:
+                    stageStatus: All
+                  failureStrategies: []
+          serviceDependencies:
+            - identifier: dind
+              name: dind
+              type: Service
+              spec:
+                connectorRef: account.dockerhub
+                image: docker:dind
+                privileged: true
+                entrypoint:
+                  - dockerd-entrypoint.sh
+                resources:
+                  limits:
+                    memory: 4Gi
+                    cpu: "3"
+          sharedPaths:
+            - /var/run
+        variables:
+          - name: DOCKERDEV_PASS
+            type: Secret
+            value: dockerhub_harnessdev
+          - name: GCS_KEY
+            type: Secret
+            value: GCS_KEY_NEW
+          - name: key
+            type: Secret
+            value: GCS_KEY
+          - name: git_key
+            type: Secret
+            description: ""
+            value: git_key
+          - name: GIT_RSA
+            type: Secret
+            description: ""
+            value: GIT_RSA
+          - name: slack_hook
+            type: Secret
+            description: ""
+            value: slack_hook
+  variables: []
+  identifier: gitleaks_scan
+  name: gitleaks scan
+  properties:
+    ci:
+      codebase:
+        connectorRef: pranayprivate
+        build: <+input>
